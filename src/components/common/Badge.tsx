@@ -20,6 +20,14 @@ interface TypeBadgeProps {
   type: 'graduate' | 'mid-career'
 }
 
+export function SubStatusBadge({ subStatus }: { subStatus: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full text-xs px-2 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200">
+      {subStatus}
+    </span>
+  )
+}
+
 export function TypeBadge({ type }: TypeBadgeProps) {
   return (
     <span className={`inline-flex items-center rounded-full text-xs px-2 py-0.5 font-medium ${

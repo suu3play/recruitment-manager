@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { AppSettings } from '@/types'
+import { DEFAULT_SUB_STATUSES } from '@/types'
 
 interface SettingsContextValue {
   settings: AppSettings | null
@@ -20,7 +21,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   async function loadSettings() {
     const settingsPath = await window.electronAPI.getSettingsPath()
     const data = await window.electronAPI.readJson<AppSettings>(settingsPath)
-    setSettings(data ?? { rootDir: '', initialized: false, assignees: [] })
+    setSettings(data ?? { rootDir: '', initialized: false, assignees: [], subStatuses: [...DEFAULT_SUB_STATUSES], webhookUrl: '', webhookType: null, messageTemplates: {} })
     setIsLoading(false)
   }
 

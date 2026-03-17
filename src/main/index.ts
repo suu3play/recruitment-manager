@@ -117,3 +117,24 @@ ipcMain.handle('app:getSettingsPath', () => {
 ipcMain.handle('fs:exists', (_event, dirPath: string) => {
   return existsSync(dirPath)
 })
+
+// Webhook 送信（Teams / Slack）
+ipcMain.handle('webhook:post', async (_event, url: string, webhookType: 'teams' | 'slack', message: string) => {
+  let body: string
+  if (webhookType === 'teams') {
+    // Teams Incoming Webhook は {"text": "..."} で送信可能
+    body = JSON.stringify({ text: message })
+  } else {
+    // Slack Incoming Webhook
+    body = JSON.stringify({ text: message })
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  })
+  if (!response.ok) {
+    throw new Error(`Webhook 送信失敗: ${response.status} ${response.statusText}`)
+  }
+  return true
+})

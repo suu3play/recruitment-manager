@@ -11,6 +11,8 @@ export interface ElectronAPI {
   writeJson: (filePath: string, data: unknown) => Promise<boolean>
   exists: (path: string) => Promise<boolean>
   getSettingsPath: () => Promise<string>
+  postWebhook: (url: string, type: 'teams' | 'slack', message: string) => Promise<true>
+  getFilePath: (file: File) => string
 }
 
 declare global {

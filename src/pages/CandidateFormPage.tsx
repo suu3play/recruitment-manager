@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCandidates } from '@/contexts/CandidateContext'
 import { useSettings } from '@/contexts/SettingsContext'
-import type { RecruitmentType, CandidateStatus, RecruitmentSource, FileCategory } from '@/types'
+import { NotifyPanel } from '@/components/candidates/NotifyPanel'
+import type { Candidate, RecruitmentType, CandidateStatus, RecruitmentSource, FileCategory } from '@/types'
 import {
   GRADUATE_STATUSES, MID_CAREER_STATUSES,
   GRADUATE_SOURCES, MID_CAREER_SOURCES,
@@ -45,7 +46,6 @@ export function CandidateFormPage() {
   const [status, setStatus] = useState<CandidateStatus>('応募')
   const [applicationDate, setApplicationDate] = useState(today())
   const [deadline, setDeadline] = useState(() => type === 'mid-career' ? weekLater() : '')
-  const [nextActionDate, setNextActionDate] = useState('')
   const [assignee, setAssignee] = useState('')
   const [showRegisterAssignee, setShowRegisterAssignee] = useState(false)
   const [email, setEmail] = useState('')
@@ -54,6 +54,7 @@ export function CandidateFormPage() {
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [createdCandidate, setCreatedCandidate] = useState<Candidate | null>(null)
 
   const sources = type === 'graduate' ? GRADUATE_SOURCES : MID_CAREER_SOURCES
   const statuses = type === 'graduate' ? GRADUATE_STATUSES : MID_CAREER_STATUSES
@@ -97,7 +98,7 @@ export function CandidateFormPage() {
           .filter(f => !existing.has(f.name))
           .map(f => ({
             name: f.name,
-            path: (f as File & { path: string }).path,
+            path: window.electronAPI.getFilePath(f),
             category: detectFileCategory(f.name),
           }))
       ]
@@ -119,16 +120,51 @@ export function CandidateFormPage() {
         graduationYear: type === 'graduate' ? graduationYear : null,
         source, status, applicationDate,
         deadline: deadline || null,
-        nextActionDate: nextActionDate || null,
+        nextActionDate: null,
         assignee,
       })
       for (const f of droppedFiles) {
         await addFile(candidate.id, f.path, f.name, f.category!)
       }
-      navigate(`/candidates/${candidate.id}`)
+      setCreatedCandidate(candidate)
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // 登録完了後：通知モーダル
+  if (createdCandidate) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl shadow-xl p-6 w-[520px] space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-gray-800">候補者を登録しました</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{createdCandidate.name} — {createdCandidate.status}</p>
+            </div>
+            <button
+              onClick={() => navigate(`/candidates/${createdCandidate.id}`)}
+              className="text-gray-400 hover:text-gray-600 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+          <NotifyPanel
+            candidate={createdCandidate}
+            status={createdCandidate.status}
+            deadline={createdCandidate.deadline}
+            onSkip={() => navigate(`/candidates/${createdCandidate.id}`)}
+            onPosted={() => setTimeout(() => navigate(`/candidates/${createdCandidate.id}`), 1200)}
+          />
+          <button
+            onClick={() => navigate(`/candidates/${createdCandidate.id}`)}
+            className="w-full py-2 border border-gray-200 rounded-md text-sm text-gray-500 hover:bg-gray-50"
+          >
+            詳細ページへ
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -216,9 +252,14 @@ export function CandidateFormPage() {
               </FieldGroup>
             </div>
 
-            <FieldGroup label="応募日" required>
-              <Input type="date" value={applicationDate} onChange={e => setApplicationDate(e.target.value)} />
-            </FieldGroup>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldGroup label="応募日" required>
+                <Input type="date" value={applicationDate} onChange={e => setApplicationDate(e.target.value)} />
+              </FieldGroup>
+              <FieldGroup label={type === 'mid-career' ? '期限（デフォルト1週間）' : '期限'}>
+                <Input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+              </FieldGroup>
+            </div>
 
             {/* 担当者（コンボボックス） */}
             <FieldGroup label="担当者">
@@ -243,14 +284,6 @@ export function CandidateFormPage() {
               )}
             </FieldGroup>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FieldGroup label={type === 'mid-career' ? '期限（デフォルト1週間）' : '期限'}>
-                <Input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
-              </FieldGroup>
-              <FieldGroup label="次アクション日">
-                <Input type="date" value={nextActionDate} onChange={e => setNextActionDate(e.target.value)} />
-              </FieldGroup>
-            </div>
           </div>
         </div>
 
