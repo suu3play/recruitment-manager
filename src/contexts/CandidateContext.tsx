@@ -10,6 +10,7 @@ interface CandidateContextValue {
   addCandidate: (data: Omit<Candidate, 'id' | 'folderPath' | 'createdAt' | 'updatedAt' | 'stages' | 'files'>) => Promise<Candidate>
   updateCandidate: (id: string, updates: Partial<Candidate>) => Promise<void>
   changeStatus: (id: string, newStatus: CandidateStatus, stageRecord: Omit<StageRecord, 'stage'>) => Promise<void>
+  updateSubStatus: (id: string, subStatus: string | null) => Promise<void>
   deleteCandidate: (id: string) => Promise<void>
   addFile: (candidateId: string, srcPath: string, fileName: string, category: FileCategory) => Promise<void>
   removeFile: (candidateId: string, fileName: string) => Promise<void>
@@ -55,6 +56,7 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
       ...data,
       id,
       folderPath,
+      subStatus: data.subStatus ?? null,
       stages: [],
       files: [],
       createdAt: now,
@@ -86,12 +88,17 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
     const updated: Candidate = {
       ...candidate,
       status: newStatus,
+      subStatus: stageData.subStatus ?? null,  // ステータス変更時にサブステータスも更新
       folderPath: newFolderPath,
       stages: [...candidate.stages, stageRecord],
       updatedAt: now,
     }
     await saveCandidateProfile(updated)
     setCandidates(prev => prev.map(c => c.id === id ? updated : c))
+  }
+
+  async function updateSubStatus(id: string, subStatus: string | null) {
+    await updateCandidate(id, { subStatus })
   }
 
   async function deleteCandidate(id: string) {
@@ -121,7 +128,7 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
   return (
     <CandidateContext.Provider value={{
       candidates, isLoading, addCandidate, updateCandidate,
-      changeStatus, deleteCandidate, addFile, removeFile, reload
+      changeStatus, updateSubStatus, deleteCandidate, addFile, removeFile, reload
     }}>
       {children}
     </CandidateContext.Provider>

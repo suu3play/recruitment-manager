@@ -2,14 +2,14 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCandidates } from '@/contexts/CandidateContext'
 import { useSettings } from '@/contexts/SettingsContext'
-import { StatusBadge, TypeBadge } from '@/components/common/Badge'
+import { StatusBadge, SubStatusBadge, TypeBadge } from '@/components/common/Badge'
 import type { CandidateStatus, RecruitmentType, RecruitmentSource } from '@/types'
 import {
   GRADUATE_STATUSES, MID_CAREER_STATUSES,
   GRADUATE_SOURCES, MID_CAREER_SOURCES
 } from '@/types'
 
-type SortKey = 'name' | 'status' | 'deadline' | 'nextActionDate' | 'createdAt'
+type SortKey = 'name' | 'status' | 'deadline' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
 export function CandidateListPage() {
@@ -144,7 +144,6 @@ export function CandidateListPage() {
                 <Th onClick={() => toggleSort('status')} sortKey="status" currentSort={sortKey} dir={sortDir}>ステータス</Th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">担当者</th>
                 <Th onClick={() => toggleSort('deadline')} sortKey="deadline" currentSort={sortKey} dir={sortDir}>期限</Th>
-                <Th onClick={() => toggleSort('nextActionDate')} sortKey="nextActionDate" currentSort={sortKey} dir={sortDir}>次アクション</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
@@ -162,13 +161,15 @@ export function CandidateListPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-600">{c.source}</td>
-                  <td className="px-4 py-3"><StatusBadge status={c.status} size="sm" /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <StatusBadge status={c.status} size="sm" />
+                      {c.subStatus && <SubStatusBadge subStatus={c.subStatus} />}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{c.assignee || '—'}</td>
                   <td className={`px-4 py-3 ${deadlineClass(c.deadline)}`}>
                     {c.deadline ? formatDate(c.deadline) : '—'}
-                  </td>
-                  <td className={`px-4 py-3 ${deadlineClass(c.nextActionDate)}`}>
-                    {c.nextActionDate ? formatDate(c.nextActionDate) : '—'}
                   </td>
                 </tr>
               ))}

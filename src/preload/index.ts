@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ダイアログ
@@ -20,4 +20,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // アプリ設定
   getSettingsPath: () => ipcRenderer.invoke('app:getSettingsPath'),
+
+  // Webhook
+  postWebhook: (url: string, type: 'teams' | 'slack', message: string) =>
+    ipcRenderer.invoke('webhook:post', url, type, message) as Promise<true>,
+
+  // ファイルパス取得（Electron 28+ サンドボックス対応）
+  getFilePath: (file: File) => webUtils.getPathForFile(file),
 })

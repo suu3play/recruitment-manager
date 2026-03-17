@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useCandidates } from '@/contexts/CandidateContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { StatusBadge, TypeBadge } from '@/components/common/Badge'
-import type { CandidateStatus, Rating, StageRecord, FileCategory } from '@/types'
+import { NotifyPanel } from '@/components/candidates/NotifyPanel'
+import { SubStatusBadge } from '@/components/common/Badge'
+import type { Candidate, CandidateStatus, Rating, StageRecord, FileCategory } from '@/types'
 import {
   GRADUATE_STATUSES, MID_CAREER_STATUSES, RATING_COLORS,
   FILE_CATEGORIES, detectFileCategory,
@@ -12,13 +14,17 @@ import {
 export function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { candidates, changeStatus, addFile, removeFile, deleteCandidate, updateCandidate } = useCandidates()
+  const { candidates, changeStatus, updateSubStatus, addFile, removeFile, deleteCandidate, updateCandidate } = useCandidates()
   const { settings } = useSettings()
   const candidate = candidates.find(c => c.id === id)
   const registeredAssignees = settings?.assignees ?? []
+  const subStatusList = settings?.subStatuses ?? []
 
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [notifyState, setNotifyState] = useState<{
+    status: CandidateStatus; deadline: string | null
+  } | null>(null)
 
   if (!candidate) {
     return <div className="p-8 text-gray-400">候補者が見つかりません</div>
@@ -32,7 +38,7 @@ export function CandidateDetailPage() {
     const files = Array.from(e.dataTransfer.files)
       .filter(f => /\.(pdf|xlsx|xls|docx|doc)$/i.test(f.name))
     for (const file of files) {
-      const path = (file as File & { path: string }).path
+      const path = window.electronAPI.getFilePath(file)
       const category: FileCategory = detectFileCategory(file.name) ?? 'その他'
       await addFile(candidate!.id, path, file.name, category)
     }
@@ -48,7 +54,7 @@ export function CandidateDetailPage() {
     <div className="flex flex-col h-full overflow-auto">
       {/* ヘッダー */}
       <div className="px-6 py-4 border-b border-gray-200 bg-white flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => navigate('/')} className="text-gray-400 hover:text-gray-600 text-sm">← 一覧</button>
           <h2 className="text-lg font-bold text-gray-800">{candidate.name}</h2>
           <TypeBadge type={candidate.type} />
@@ -56,6 +62,17 @@ export function CandidateDetailPage() {
             <span className="text-sm text-gray-400">{candidate.graduationYear}年卒</span>
           )}
           <StatusBadge status={candidate.status} />
+          {/* サブステータス */}
+          {candidate.subStatus && <SubStatusBadge subStatus={candidate.subStatus} />}
+          {/* サブステータス クイック変更 */}
+          <select
+            value={candidate.subStatus ?? ''}
+            onChange={e => updateSubStatus(candidate.id, e.target.value || null)}
+            className="text-xs px-2 py-1 border border-gray-200 rounded-md text-gray-500 bg-white hover:border-gray-300"
+          >
+            <option value="">サブステータスなし</option>
+            {subStatusList.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
         <div className="flex gap-2">
           <button
@@ -95,11 +112,6 @@ export function CandidateDetailPage() {
               label="期限"
               value={candidate.deadline ? formatDate(candidate.deadline) : '—'}
               className={deadlineClass(candidate.deadline)}
-            />
-            <InfoRow
-              label="次アクション"
-              value={candidate.nextActionDate ? formatDate(candidate.nextActionDate) : '—'}
-              className={deadlineClass(candidate.nextActionDate)}
             />
           </InfoCard>
 
@@ -190,12 +202,33 @@ export function CandidateDetailPage() {
           candidate={candidate}
           statuses={statuses}
           registeredAssignees={registeredAssignees}
+          subStatusList={subStatusList}
           onClose={() => setShowStatusModal(false)}
           onSubmit={async (newStatus, record) => {
             await changeStatus(candidate.id, newStatus, record)
             setShowStatusModal(false)
+            setNotifyState({ status: newStatus, deadline: (record as any).deadline ?? null })
           }}
         />
+      )}
+
+      {/* ステータス変更後の投稿パネル */}
+      {notifyState && candidate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-[520px] space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">チャットに通知</h3>
+              <button onClick={() => setNotifyState(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+            </div>
+            <NotifyPanel
+              candidate={candidate}
+              status={notifyState.status}
+              deadline={notifyState.deadline}
+              onSkip={() => setNotifyState(null)}
+              onPosted={() => setTimeout(() => setNotifyState(null), 1200)}
+            />
+          </div>
+        </div>
       )}
     </div>
   )
@@ -225,10 +258,11 @@ function weekLater(from?: string): string {
   return d.toISOString().split('T')[0]
 }
 
-function StatusChangeModal({ candidate, statuses, registeredAssignees, onClose, onSubmit }: {
+function StatusChangeModal({ candidate, statuses, registeredAssignees, subStatusList, onClose, onSubmit }: {
   candidate: { status: CandidateStatus; type: string; assignee: string }
   statuses: CandidateStatus[]
   registeredAssignees: string[]
+  subStatusList: string[]
   onClose: () => void
   onSubmit: (status: CandidateStatus, record: Omit<StageRecord, 'stage'>) => Promise<void>
 }) {
@@ -236,6 +270,7 @@ function StatusChangeModal({ candidate, statuses, registeredAssignees, onClose, 
   const isMidCareer = candidate.type === 'mid-career'
 
   const [newStatus, setNewStatus] = useState<CandidateStatus>(candidate.status)
+  const [subStatus, setSubStatus] = useState('')
   const [date, setDate] = useState(today)
   const [evaluator, setEvaluator] = useState(candidate.assignee)
   const [deadline, setDeadline] = useState(isMidCareer ? weekLater() : '')
@@ -245,7 +280,11 @@ function StatusChangeModal({ candidate, statuses, registeredAssignees, onClose, 
 
   async function handleSubmit() {
     setIsLoading(true)
-    await onSubmit(newStatus, { date, evaluator, rating: rating || null, memo, deadline: deadline || null } as Omit<StageRecord, 'stage'>)
+    await onSubmit(newStatus, {
+      date, evaluator, rating: rating || null, memo,
+      subStatus: subStatus || null,
+      deadline: deadline || null,
+    } as Omit<StageRecord, 'stage'>)
     setIsLoading(false)
   }
 
@@ -254,15 +293,30 @@ function StatusChangeModal({ candidate, statuses, registeredAssignees, onClose, 
       <div className="bg-white rounded-xl shadow-xl p-6 w-[480px] space-y-4">
         <h3 className="text-base font-bold text-gray-800">ステータス変更</h3>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">新しいステータス</label>
-          <select
-            value={newStatus}
-            onChange={e => setNewStatus(e.target.value as CandidateStatus)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-          >
-            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">新しいステータス</label>
+            <select
+              value={newStatus}
+              onChange={e => setNewStatus(e.target.value as CandidateStatus)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+            >
+              {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              サブステータス <span className="text-gray-400 font-normal text-xs">（任意）</span>
+            </label>
+            <select
+              value={subStatus}
+              onChange={e => setSubStatus(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+            >
+              <option value="">なし</option>
+              {subStatusList.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
