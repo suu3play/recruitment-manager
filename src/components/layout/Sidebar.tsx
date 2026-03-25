@@ -1,6 +1,12 @@
 import { NavLink } from 'react-router-dom'
 
-const navItems = [
+interface NavItem {
+  to: string
+  label: string
+  icon: string
+}
+
+const navItems: NavItem[] = [
   { to: '/', label: '候補者一覧', icon: '👥' },
   { to: '/candidates/new', label: '候補者追加', icon: '➕' },
   { to: '/settings', label: '設定', icon: '⚙️' },

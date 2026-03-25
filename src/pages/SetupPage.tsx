@@ -7,6 +7,7 @@ export function SetupPage() {
   const { saveSettings } = useSettings()
   const [rootDir, setRootDir] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function handleSelectDir() {
     const dir = await window.electronAPI.selectDirectory()
@@ -16,6 +17,7 @@ export function SetupPage() {
   async function handleStart() {
     if (!rootDir) return
     setIsSaving(true)
+    setSaveError(null)
     const settings: AppSettings = {
       rootDir,
       initialized: true,
@@ -25,8 +27,12 @@ export function SetupPage() {
       webhookType: null,
       messageTemplates: {},
     }
-    await saveSettings(settings)
-    setIsSaving(false)
+    try {
+      await saveSettings(settings)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '設定の保存に失敗しました')
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -63,6 +69,9 @@ export function SetupPage() {
           )}
         </div>
 
+        {saveError && (
+          <p className="text-xs text-red-500">{saveError}</p>
+        )}
         <button
           onClick={handleStart}
           disabled={!rootDir || isSaving}

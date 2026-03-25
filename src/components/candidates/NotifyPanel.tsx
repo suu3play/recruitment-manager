@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { Candidate } from '@/types'
 import { templateKey, renderTemplate, DEFAULT_TEMPLATES } from '@/types'
@@ -31,9 +31,13 @@ export function NotifyPanel({ candidate, status, deadline, onSkip, onPosted }: N
 
   const [message, setMessage] = useState(() => renderTemplate(baseTemplate, vars))
   const [postStatus, setPostStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
+
+  useEffect(() => {
+    setMessage(renderTemplate(baseTemplate, vars))
+  }, [candidate, status])
   const [errorMsg, setErrorMsg] = useState('')
 
-  const canPost = !!webhookUrl && !!webhookType
+  const canPost = !!webhookUrl && !!webhookType && !!window.electronAPI?.postWebhook
 
   async function handlePost() {
     if (!canPost) return

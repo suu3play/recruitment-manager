@@ -22,6 +22,7 @@ export function CandidateDetailPage() {
 
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [notifyState, setNotifyState] = useState<{
     status: CandidateStatus; deadline: string | null
   } | null>(null)
@@ -38,16 +39,29 @@ export function CandidateDetailPage() {
     const files = Array.from(e.dataTransfer.files)
       .filter(f => /\.(pdf|xlsx|xls|docx|doc)$/i.test(f.name))
     for (const file of files) {
-      const path = window.electronAPI.getFilePath(file)
-      const category: FileCategory = detectFileCategory(file.name) ?? 'その他'
-      await addFile(candidate!.id, path, file.name, category)
+      try {
+        if (!window.electronAPI?.getFilePath) {
+          throw new Error('electronAPI が利用できません')
+        }
+        const path = window.electronAPI.getFilePath(file)
+        const category: FileCategory = detectFileCategory(file.name) ?? 'その他'
+        await addFile(candidate!.id, path, file.name, category)
+      } catch (err) {
+        console.error('ファイルの追加に失敗しました:', err)
+        alert(`ファイルの追加に失敗しました: ${file.name}`)
+      }
     }
   }
 
   async function handleDelete() {
     if (!confirm(`「${candidate!.name}」を削除しますか？`)) return
-    await deleteCandidate(candidate!.id)
-    navigate('/')
+    setDeleteError(null)
+    try {
+      await deleteCandidate(candidate!.id)
+      navigate('/')
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '削除に失敗しました')
+    }
   }
 
   return (
@@ -95,6 +109,11 @@ export function CandidateDetailPage() {
           </button>
         </div>
       </div>
+      {deleteError && (
+        <div className="px-6 py-2 bg-red-50 border-b border-red-200">
+          <p className="text-sm text-red-600">{deleteError}</p>
+        </div>
+      )}
 
       <div className="p-6 grid grid-cols-3 gap-6">
         {/* 基本情報 */}
@@ -280,12 +299,15 @@ function StatusChangeModal({ candidate, statuses, registeredAssignees, subStatus
 
   async function handleSubmit() {
     setIsLoading(true)
-    await onSubmit(newStatus, {
-      date, evaluator, rating: rating || null, memo,
-      subStatus: subStatus || null,
-      deadline: deadline || null,
-    } as Omit<StageRecord, 'stage'>)
-    setIsLoading(false)
+    try {
+      await onSubmit(newStatus, {
+        date, evaluator, rating: rating || null, memo,
+        subStatus: subStatus || null,
+        deadline: deadline || null,
+      } as Omit<StageRecord, 'stage'>)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

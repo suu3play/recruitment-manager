@@ -21,6 +21,7 @@ interface TypeBadgeProps {
 }
 
 export function SubStatusBadge({ subStatus }: { subStatus: string }) {
+  if (!subStatus) return null
   return (
     <span className="inline-flex items-center rounded-full text-xs px-2 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200">
       {subStatus}

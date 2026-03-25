@@ -40,8 +40,8 @@ export function CandidateListPage() {
       const q = search.toLowerCase()
       list = list.filter(c =>
         c.name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.assignee.toLowerCase().includes(q)
+        (c.email?.toLowerCase() ?? '').includes(q) ||
+        (c.assignee?.toLowerCase() ?? '').includes(q)
       )
     }
     list.sort((a, b) => {
@@ -52,6 +52,31 @@ export function CandidateListPage() {
     })
     return list
   }, [candidates, typeFilter, statusFilter, sourceFilter, yearFilter, search, sortKey, sortDir])
+
+  function exportCSV() {
+    const headers = ['氏名', '採用区分', 'ステータス', '採用媒体', '担当者', '応募日', '期限']
+    const typeLabel = (type: string) => type === 'graduate' ? '新卒' : type === 'mid-career' ? '中途' : type
+    const rows = filtered.map(c => [
+      c.name,
+      typeLabel(c.type),
+      c.status,
+      c.source ?? '',
+      c.assignee ?? '',
+      c.createdAt ? c.createdAt.slice(0, 10) : '',
+      c.deadline ? c.deadline.slice(0, 10) : '',
+    ])
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n')
+    const bom = '\uFEFF'
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `candidates_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -69,6 +94,14 @@ export function CandidateListPage() {
     if (days <= 3) return 'text-orange-500 font-semibold'
     return 'text-gray-600'
   }
+
+  const now = Date.now()
+  const expiredCount = filtered.filter(c => c.deadline && new Date(c.deadline).getTime() < now).length
+  const nearDeadlineCount = filtered.filter(c => {
+    if (!c.deadline) return false
+    const days = Math.ceil((new Date(c.deadline).getTime() - now) / 86400000)
+    return days >= 0 && days <= 3
+  }).length
 
   if (!settings?.initialized) {
     return (
@@ -89,12 +122,20 @@ export function CandidateListPage() {
           <h2 className="text-lg font-bold text-gray-800">
             候補者一覧 <span className="text-sm font-normal text-gray-500">({filtered.length}件)</span>
           </h2>
-          <button
-            onClick={() => navigate('/candidates/new')}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
-          >
-            + 候補者追加
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportCSV}
+              className="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-md text-sm font-medium transition-colors"
+            >
+              CSVエクスポート
+            </button>
+            <button
+              onClick={() => navigate('/candidates/new')}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
+            >
+              + 候補者追加
+            </button>
+          </div>
         </div>
 
         {/* フィルター */}
@@ -128,8 +169,17 @@ export function CandidateListPage() {
         </div>
       </div>
 
+      {/* 期限警告バナー */}
+      {(expiredCount > 0 || nearDeadlineCount > 0) && (
+        <div className="mx-6 mt-3 px-4 py-2 bg-red-50 border border-red-200 rounded-md text-sm text-red-700 flex items-center gap-3">
+          <span className="font-medium">期限アラート:</span>
+          {expiredCount > 0 && <span>期限切れ: <strong>{expiredCount}件</strong></span>}
+          {nearDeadlineCount > 0 && <span>直近3日以内: <strong>{nearDeadlineCount}件</strong></span>}
+        </div>
+      )}
+
       {/* テーブル */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto mt-3">
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">読み込み中...</div>
         ) : filtered.length === 0 ? (
@@ -218,5 +268,6 @@ function Th({ children, onClick, sortKey, currentSort, dir }: {
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
   return `${d.getMonth() + 1}/${d.getDate()}`
 }

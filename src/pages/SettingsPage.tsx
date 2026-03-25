@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { AppSettings, CandidateStatus, RecruitmentType, WebhookType } from '@/types'
 import {
@@ -12,6 +12,8 @@ export function SettingsPage() {
   const { settings, saveSettings } = useSettings()
   const [tab, setTab] = useState<Tab>('general')
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   // general
   const [rootDir, setRootDir] = useState(settings?.rootDir ?? '')
@@ -64,11 +66,20 @@ export function SettingsPage() {
     }
   }
 
+  function addListItem(
+    value: string,
+    list: string[],
+    setList: Dispatch<SetStateAction<string[]>>,
+    setValue: Dispatch<SetStateAction<string>>,
+  ) {
+    const trimmed = value.trim()
+    if (!trimmed || list.includes(trimmed)) return
+    setList(prev => [...prev, trimmed])
+    setValue('')
+  }
+
   function addAssignee() {
-    const name = newAssignee.trim()
-    if (!name || assignees.includes(name)) return
-    setAssignees(prev => [...prev, name])
-    setNewAssignee('')
+    addListItem(newAssignee, assignees, setAssignees, setNewAssignee)
   }
 
   function removeAssignee(name: string) {
@@ -76,10 +87,7 @@ export function SettingsPage() {
   }
 
   function addSubStatus() {
-    const s = newSubStatus.trim()
-    if (!s || subStatuses.includes(s)) return
-    setSubStatuses(prev => [...prev, s])
-    setNewSubStatus('')
+    addListItem(newSubStatus, subStatuses, setSubStatuses, setNewSubStatus)
   }
 
   function removeSubStatus(s: string) {
@@ -100,6 +108,7 @@ export function SettingsPage() {
   }
 
   async function handleSave() {
+    if (isSaving) return
     const newSettings: AppSettings = {
       rootDir,
       initialized: !!rootDir,
@@ -109,9 +118,17 @@ export function SettingsPage() {
       webhookType: webhookType ?? detectWebhookType(webhookUrl),
       messageTemplates: templates,
     }
-    await saveSettings(newSettings)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setIsSaving(true)
+    try {
+      setSaveError(null)
+      await saveSettings(newSettings)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '設定の保存に失敗しました')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const TABS: { key: Tab; label: string }[] = [
@@ -340,12 +357,15 @@ export function SettingsPage() {
           </div>
         )}
 
+        {saveError && (
+          <p className="text-xs text-red-500">{saveError}</p>
+        )}
         <button
           onClick={handleSave}
-          disabled={!rootDir}
+          disabled={!rootDir || isSaving}
           className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-40"
         >
-          {saved ? '保存しました' : '保存'}
+          {isSaving ? '保存中...' : saved ? '保存しました' : '保存'}
         </button>
       </div>
     </div>

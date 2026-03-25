@@ -21,7 +21,14 @@ export function buildCandidateFolderPath(
 ): string {
   const typeDir = type === 'graduate' ? '新卒' : '中途'
   const statusDir = STATUS_FOLDER_MAP[status]
-  const candidateDir = `${sanitizeDirName(candidateName)}_${candidateId.substring(0, 8)}`
+  if (statusDir === undefined) {
+    throw new Error(`ステータスに対応するフォルダが定義されていません: "${status}"`)
+  }
+  const sanitizedName = sanitizeDirName(candidateName)
+  if (!sanitizedName) {
+    throw new Error(`候補者名が無効です: "${candidateName}"`)
+  }
+  const candidateDir = `${sanitizedName}_${candidateId.substring(0, 8)}`
 
   if (type === 'graduate' && graduationYear) {
     return join(rootDir, typeDir, `${graduationYear}年卒`, statusDir, candidateDir)
@@ -55,7 +62,12 @@ export async function moveCandidateFolder(
 
   const oldExists = await window.electronAPI.exists(candidate.folderPath)
   if (oldExists && candidate.folderPath !== newFolderPath) {
-    await window.electronAPI.moveDir(candidate.folderPath, newFolderPath)
+    const moved = await window.electronAPI.moveDir(candidate.folderPath, newFolderPath)
+    if (!moved) {
+      throw new Error(
+        `フォルダの移動に失敗しました: "${candidate.folderPath}" → "${newFolderPath}"`
+      )
+    }
   } else if (!oldExists) {
     await window.electronAPI.ensureDir(newFolderPath)
   }

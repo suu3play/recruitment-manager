@@ -117,7 +117,7 @@ export type TemplateVars = {
 
 export function renderTemplate(template: string, vars: TemplateVars): string {
   return template.replace(/\{\{(.+?)\}\}/g, (_, key) => {
-    return (vars as Record<string, string>)[key.trim()] ?? `{{${key}}}`
+    return (vars as Record<string, string>)[key.trim()] ?? ''
   })
 }
 

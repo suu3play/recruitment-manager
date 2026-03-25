@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveDir: (src: string, dest: string) => ipcRenderer.invoke('fs:moveDir', src, dest),
   readJson: <T>(filePath: string) => ipcRenderer.invoke('fs:readJson', filePath) as Promise<T | null>,
   writeJson: (filePath: string, data: unknown) => ipcRenderer.invoke('fs:writeJson', filePath, data),
+  deleteDir: (dirPath: string) => ipcRenderer.invoke('fs:deleteDir', dirPath),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
 
   // アプリ設定
@@ -27,4 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ファイルパス取得（Electron 28+ サンドボックス対応）
   getFilePath: (file: File) => webUtils.getPathForFile(file),
+
+  // FSウォッチャー
+  watchStart: (dirPath: string) => ipcRenderer.invoke('fs:watch-start', dirPath),
+  onFsChanged: (callback: () => void) => ipcRenderer.on('fs:changed', callback),
 })

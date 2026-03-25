@@ -27,9 +27,12 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     if (!settings?.initialized || !settings.rootDir) return
     setIsLoading(true)
-    const loaded = await scanCandidates(settings.rootDir)
-    setCandidates(loaded)
-    setIsLoading(false)
+    try {
+      const loaded = await scanCandidates(settings.rootDir)
+      setCandidates(loaded)
+    } finally {
+      setIsLoading(false)
+    }
   }, [settings])
 
   useEffect(() => {
@@ -42,6 +45,7 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
   }
 
   async function addCandidate(data: Omit<Candidate, 'id' | 'folderPath' | 'createdAt' | 'updatedAt' | 'stages' | 'files'>): Promise<Candidate> {
+    if (!settings?.initialized || !settings.rootDir) throw new Error('設定が初期化されていません')
     const id = uuidv4()
     const now = new Date().toISOString()
     const folderPath = buildCandidateFolderPath(
@@ -70,21 +74,25 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
 
   async function updateCandidate(id: string, updates: Partial<Candidate>) {
     const now = new Date().toISOString()
-    setCandidates(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: now } : c)
-      const updated = next.find(c => c.id === id)
-      if (updated) saveCandidateProfile(updated)
-      return next
-    })
+    setCandidates(prev => prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: now } : c))
+    const updated = candidates.find(c => c.id === id)
+    if (updated) await saveCandidateProfile({ ...updated, ...updates, updatedAt: now })
   }
 
   async function changeStatus(id: string, newStatus: CandidateStatus, stageData: Omit<StageRecord, 'stage'>) {
     const candidate = candidates.find(c => c.id === id)
     if (!candidate) return
 
-    const newFolderPath = await moveCandidateFolder(candidate, settings!.rootDir, newStatus)
     const stageRecord: StageRecord = { ...stageData, stage: newStatus }
     const now = new Date().toISOString()
+    const newFolderPath = buildCandidateFolderPath(
+      settings!.rootDir,
+      candidate.type,
+      newStatus,
+      candidate.name,
+      candidate.id,
+      candidate.graduationYear
+    )
     const updated: Candidate = {
       ...candidate,
       status: newStatus,
@@ -93,15 +101,20 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
       stages: [...candidate.stages, stageRecord],
       updatedAt: now,
     }
+    // saveProfile が失敗した場合はエラーをスローしてフォルダ移動を中止する
     await saveCandidateProfile(updated)
+    await moveCandidateFolder(candidate, settings!.rootDir, newStatus)
     setCandidates(prev => prev.map(c => c.id === id ? updated : c))
   }
+
 
   async function updateSubStatus(id: string, subStatus: string | null) {
     await updateCandidate(id, { subStatus })
   }
 
   async function deleteCandidate(id: string) {
+    const candidate = candidates.find(c => c.id === id)
+    if (candidate) await window.electronAPI.deleteDir(candidate.folderPath)
     setCandidates(prev => prev.filter(c => c.id !== id))
   }
 

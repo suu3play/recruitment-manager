@@ -34,7 +34,7 @@ function today(): string {
 
 export function CandidateFormPage() {
   const navigate = useNavigate()
-  const { addCandidate, addFile } = useCandidates()
+  const { addCandidate, addFile, candidates } = useCandidates()
   const { settings, saveSettings } = useSettings()
   const registeredAssignees = settings?.assignees ?? []
 
@@ -54,7 +54,10 @@ export function CandidateFormPage() {
   const [droppedFiles, setDroppedFiles] = useState<DroppedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [createdCandidate, setCreatedCandidate] = useState<Candidate | null>(null)
+
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false)
 
   const sources = type === 'graduate' ? GRADUATE_SOURCES : MID_CAREER_SOURCES
   const statuses = type === 'graduate' ? GRADUATE_STATUSES : MID_CAREER_STATUSES
@@ -113,6 +116,7 @@ export function CandidateFormPage() {
     e.preventDefault()
     if (!settings?.initialized || !allCategorized) return
     setIsSubmitting(true)
+    setSubmitError(null)
     const { school, department } = parseSchoolDept(schoolRaw)
     try {
       const candidate = await addCandidate({
@@ -127,6 +131,8 @@ export function CandidateFormPage() {
         await addFile(candidate.id, f.path, f.name, f.category!)
       }
       setCreatedCandidate(candidate)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '候補者の登録に失敗しました')
     } finally {
       setIsSubmitting(false)
     }
@@ -198,7 +204,15 @@ export function CandidateFormPage() {
             </div>
 
             <FieldGroup label="氏名" required>
-              <Input value={name} onChange={e => setName(e.target.value)} required />
+              <Input
+                value={name}
+                onChange={e => { setName(e.target.value); setShowDuplicateWarning(false) }}
+                onBlur={() => setShowDuplicateWarning(name.trim() !== '' && candidates.some(c => c.name === name.trim()))}
+                required
+              />
+              {showDuplicateWarning && (
+                <p className="text-xs text-orange-500 mt-1">同名の候補者がすでに登録されています。</p>
+              )}
             </FieldGroup>
 
             <FieldGroup label="学校・学部" hint="「大学名/学部名」または「大学名　学部名」（スペース2つ）で自動分割">
@@ -349,6 +363,12 @@ export function CandidateFormPage() {
             <p className="text-xs text-orange-500 mt-2">未判定のファイルの種別を選択してください</p>
           )}
         </div>
+
+        {submitError && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2">
+            {submitError}
+          </p>
+        )}
 
         <div className="flex gap-3">
           <button type="button" onClick={() => navigate(-1)} className="px-5 py-2 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50">
