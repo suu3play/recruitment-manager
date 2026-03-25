@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { ElectronAPI } from '../types/electron'
 
-contextBridge.exposeInMainWorld('electronAPI', {
+const api = {
   // ダイアログ
   selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory'),
 
@@ -16,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveDir: (src: string, dest: string) => ipcRenderer.invoke('fs:moveDir', src, dest),
   readJson: <T>(filePath: string) => ipcRenderer.invoke('fs:readJson', filePath) as Promise<T | null>,
   writeJson: (filePath: string, data: unknown) => ipcRenderer.invoke('fs:writeJson', filePath, data),
+  deleteDir: (dirPath: string) => ipcRenderer.invoke('fs:deleteDir', dirPath),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
 
   // アプリ設定
@@ -23,8 +25,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Webhook
   postWebhook: (url: string, type: 'teams' | 'slack', message: string) =>
-    ipcRenderer.invoke('webhook:post', url, type, message) as Promise<true>,
+    ipcRenderer.invoke('webhook:post', url, type, message) as Promise<boolean>,
 
   // ファイルパス取得（Electron 28+ サンドボックス対応）
-  getFilePath: (file: File) => webUtils.getPathForFile(file),
-})
+  getFilePath: (file: File): string => {
+    if (!file || !(file instanceof File)) throw new Error('無効なファイルオブジェクトです')
+    return webUtils.getPathForFile(file)
+  },
+
+  // FSウォッチャー
+  watchStart: (dirPath: string) => ipcRenderer.invoke('fs:watch-start', dirPath),
+  onFsChanged: (callback: () => void) => ipcRenderer.on('fs:changed', callback),
+} satisfies ElectronAPI
+
+contextBridge.exposeInMainWorld('electronAPI', api)

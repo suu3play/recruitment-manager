@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Candidate, CandidateStatus, StageRecord, FileCategory } from '@/types'
-import { buildCandidateFolderPath, moveCandidateFolder, getProfileJsonPath } from '@/utils/folderStructure'
+import { buildCandidateFolderPath, moveCandidateFolder, getProfileJsonPath, TYPE_FOLDER_MAP } from '@/utils/folderStructure'
 import { useSettings } from './SettingsContext'
 
 interface CandidateContextValue {
@@ -27,9 +27,12 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     if (!settings?.initialized || !settings.rootDir) return
     setIsLoading(true)
-    const loaded = await scanCandidates(settings.rootDir)
-    setCandidates(loaded)
-    setIsLoading(false)
+    try {
+      const loaded = await scanCandidates(settings.rootDir)
+      setCandidates(loaded)
+    } finally {
+      setIsLoading(false)
+    }
   }, [settings])
 
   useEffect(() => {
@@ -42,6 +45,7 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
   }
 
   async function addCandidate(data: Omit<Candidate, 'id' | 'folderPath' | 'createdAt' | 'updatedAt' | 'stages' | 'files'>): Promise<Candidate> {
+    if (!settings?.initialized || !settings.rootDir) throw new Error('設定が初期化されていません')
     const id = uuidv4()
     const now = new Date().toISOString()
     const folderPath = buildCandidateFolderPath(
@@ -70,21 +74,28 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
 
   async function updateCandidate(id: string, updates: Partial<Candidate>) {
     const now = new Date().toISOString()
-    setCandidates(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: now } : c)
-      const updated = next.find(c => c.id === id)
-      if (updated) saveCandidateProfile(updated)
-      return next
-    })
+    const target = candidates.find(c => c.id === id)
+    if (!target) return
+    const updated = { ...target, ...updates, updatedAt: now }
+    setCandidates(prev => prev.map(c => c.id === id ? updated : c))
+    await saveCandidateProfile(updated)
   }
 
   async function changeStatus(id: string, newStatus: CandidateStatus, stageData: Omit<StageRecord, 'stage'>) {
     const candidate = candidates.find(c => c.id === id)
     if (!candidate) return
 
-    const newFolderPath = await moveCandidateFolder(candidate, settings!.rootDir, newStatus)
     const stageRecord: StageRecord = { ...stageData, stage: newStatus }
     const now = new Date().toISOString()
+    if (!settings?.rootDir) throw new Error('設定が初期化されていません')
+    const newFolderPath = buildCandidateFolderPath(
+      settings.rootDir,
+      candidate.type,
+      newStatus,
+      candidate.name,
+      candidate.id,
+      candidate.graduationYear
+    )
     const updated: Candidate = {
       ...candidate,
       status: newStatus,
@@ -93,15 +104,20 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
       stages: [...candidate.stages, stageRecord],
       updatedAt: now,
     }
+    // saveProfile が失敗した場合はエラーをスローしてフォルダ移動を中止する
     await saveCandidateProfile(updated)
+    await moveCandidateFolder(candidate, settings.rootDir, newStatus)
     setCandidates(prev => prev.map(c => c.id === id ? updated : c))
   }
+
 
   async function updateSubStatus(id: string, subStatus: string | null) {
     await updateCandidate(id, { subStatus })
   }
 
   async function deleteCandidate(id: string) {
+    const candidate = candidates.find(c => c.id === id)
+    if (candidate) await window.electronAPI.deleteDir(candidate.folderPath)
     setCandidates(prev => prev.filter(c => c.id !== id))
   }
 
@@ -109,7 +125,8 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
     const candidate = candidates.find(c => c.id === candidateId)
     if (!candidate) return
     const destPath = `${candidate.folderPath}/${fileName}`
-    await window.electronAPI.copyFile(srcPath, destPath)
+    const copied = await window.electronAPI.copyFile(srcPath, destPath)
+    if (!copied) throw new Error(`ファイルのコピーに失敗しました: ${fileName}`)
     await updateCandidate(candidateId, {
       files: [...candidate.files, { name: fileName, path: destPath, category }]
     })
@@ -119,6 +136,7 @@ export function CandidateProvider({ children }: { children: ReactNode }) {
     const candidate = candidates.find(c => c.id === candidateId)
     if (!candidate) return
     const file = candidate.files.find(f => f.name === fileName)
+    // deleteFile が失敗（例外）した場合はメタデータの削除を中止する
     if (file) await window.electronAPI.deleteFile(file.path)
     await updateCandidate(candidateId, {
       files: candidate.files.filter(f => f.name !== fileName)
@@ -144,14 +162,13 @@ export function useCandidates() {
 // ルートディレクトリを再帰的にスキャンして候補者を読み込む
 async function scanCandidates(rootDir: string): Promise<Candidate[]> {
   const results: Candidate[] = []
-  const typeKeys = ['新卒', '中途']
 
-  for (const typeKey of typeKeys) {
-    const typeDir = `${rootDir}/${typeKey}`
+  for (const [type, folderName] of Object.entries(TYPE_FOLDER_MAP)) {
+    const typeDir = `${rootDir}/${folderName}`
     const exists = await window.electronAPI.exists(typeDir)
     if (!exists) continue
 
-    if (typeKey === '新卒') {
+    if (type === 'graduate') {
       const yearDirs = await window.electronAPI.listFiles(typeDir)
       for (const yearDir of yearDirs) {
         await scanStatusDirs(`${typeDir}/${yearDir}`, results)
@@ -169,9 +186,13 @@ async function scanStatusDirs(statusParentDir: string, results: Candidate[]) {
     const statusDirPath = `${statusParentDir}/${statusDir}`
     const candidateDirs = await window.electronAPI.listFiles(statusDirPath)
     for (const candidateDir of candidateDirs) {
-      const profilePath = `${statusDirPath}/${candidateDir}/profile.json`
-      const profile = await window.electronAPI.readJson<Candidate>(profilePath)
-      if (profile) results.push(profile)
+      try {
+        const profilePath = `${statusDirPath}/${candidateDir}/profile.json`
+        const profile = await window.electronAPI.readJson<Candidate>(profilePath)
+        if (profile) results.push(profile)
+      } catch {
+        // 個別の候補者読み込みエラーはスキップして他の候補者を継続ロード
+      }
     }
   }
 }

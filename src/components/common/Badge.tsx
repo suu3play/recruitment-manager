@@ -7,7 +7,7 @@ interface Props {
 }
 
 export function StatusBadge({ status, size = 'md' }: Props) {
-  const color = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-700'
+  const color = STATUS_COLORS[status]
   const sizeClass = size === 'sm' ? 'text-xs px-1.5 py-0.5' : 'text-xs px-2.5 py-1'
   return (
     <span className={`inline-flex items-center rounded-full font-medium ${color} ${sizeClass}`}>
@@ -21,6 +21,7 @@ interface TypeBadgeProps {
 }
 
 export function SubStatusBadge({ subStatus }: { subStatus: string }) {
+  if (!subStatus) return null
   return (
     <span className="inline-flex items-center rounded-full text-xs px-2 py-0.5 font-medium bg-amber-50 text-amber-700 border border-amber-200">
       {subStatus}

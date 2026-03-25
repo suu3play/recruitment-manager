@@ -1,11 +1,22 @@
 import type { Candidate, RecruitmentType, CandidateStatus } from '@/types'
 import { STATUS_FOLDER_MAP } from '@/types'
 
+/** RecruitmentType とフォルダ名の対応表 */
+export const TYPE_FOLDER_MAP: Record<RecruitmentType, string> = {
+  graduate: '新卒',
+  'mid-career': '中途',
+}
+
+/**
+ * OS のパス区切り文字の差異を吸収しながらパスを結合する。
+ * Windows 絶対パス（ドライブレター付き）も正しく処理する。
+ */
 function join(...parts: string[]): string {
+  const sep = parts[0]?.includes('\\') ? '\\' : '/'
   return parts
     .map((p, i) => i === 0 ? p.replace(/[\\/]+$/, '') : p.replace(/^[\\/]+|[\\/]+$/g, ''))
     .filter(Boolean)
-    .join('/')
+    .join(sep)
 }
 
 /**
@@ -19,11 +30,18 @@ export function buildCandidateFolderPath(
   candidateId: string,
   graduationYear: string | null = null
 ): string {
-  const typeDir = type === 'graduate' ? '新卒' : '中途'
+  const typeDir = TYPE_FOLDER_MAP[type]
   const statusDir = STATUS_FOLDER_MAP[status]
-  const candidateDir = `${sanitizeDirName(candidateName)}_${candidateId.substring(0, 8)}`
+  if (statusDir === undefined) {
+    throw new Error(`ステータスに対応するフォルダが定義されていません: "${status}"`)
+  }
+  const sanitizedName = sanitizeDirName(candidateName)
+  if (!sanitizedName) {
+    throw new Error(`候補者名が無効です: "${candidateName}"`)
+  }
+  const candidateDir = `${sanitizedName}_${candidateId.substring(0, 8)}`
 
-  if (type === 'graduate' && graduationYear) {
+  if (type === 'graduate' && graduationYear && /^\d{4}$/.test(graduationYear)) {
     return join(rootDir, typeDir, `${graduationYear}年卒`, statusDir, candidateDir)
   }
   return join(rootDir, typeDir, statusDir, candidateDir)
@@ -55,7 +73,12 @@ export async function moveCandidateFolder(
 
   const oldExists = await window.electronAPI.exists(candidate.folderPath)
   if (oldExists && candidate.folderPath !== newFolderPath) {
-    await window.electronAPI.moveDir(candidate.folderPath, newFolderPath)
+    const moved = await window.electronAPI.moveDir(candidate.folderPath, newFolderPath)
+    if (!moved) {
+      throw new Error(
+        `フォルダの移動に失敗しました: "${candidate.folderPath}" → "${newFolderPath}"`
+      )
+    }
   } else if (!oldExists) {
     await window.electronAPI.ensureDir(newFolderPath)
   }

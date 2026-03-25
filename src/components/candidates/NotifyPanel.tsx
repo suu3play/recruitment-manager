@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { Candidate } from '@/types'
 import { templateKey, renderTemplate, DEFAULT_TEMPLATES } from '@/types'
@@ -31,9 +31,24 @@ export function NotifyPanel({ candidate, status, deadline, onSkip, onPosted }: N
 
   const [message, setMessage] = useState(() => renderTemplate(baseTemplate, vars))
   const [postStatus, setPostStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
+
+  useEffect(() => {
+    setMessage(renderTemplate(baseTemplate, vars))
+  }, [candidate, status])
   const [errorMsg, setErrorMsg] = useState('')
 
-  const canPost = !!webhookUrl && !!webhookType
+  const canPost = !!webhookUrl && !!webhookType && !!window.electronAPI?.postWebhook
+
+  const WEBHOOK_LABEL: Record<string, string> = { teams: 'Teams', slack: 'Slack' }
+  const webhookLabel = (webhookType && WEBHOOK_LABEL[webhookType]) ?? 'チャット'
+
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   async function handlePost() {
     if (!canPost) return
@@ -41,11 +56,15 @@ export function NotifyPanel({ candidate, status, deadline, onSkip, onPosted }: N
     setErrorMsg('')
     try {
       await window.electronAPI.postWebhook(webhookUrl, webhookType!, message)
-      setPostStatus('ok')
-      onPosted?.()
+      if (mountedRef.current) {
+        setPostStatus('ok')
+        onPosted?.()
+      }
     } catch (e: any) {
-      setPostStatus('error')
-      setErrorMsg(e?.message ?? '送信に失敗しました')
+      if (mountedRef.current) {
+        setPostStatus('error')
+        setErrorMsg(e?.message ?? '送信に失敗しました')
+      }
     }
   }
 
@@ -55,7 +74,7 @@ export function NotifyPanel({ candidate, status, deadline, onSkip, onPosted }: N
     <div className="border border-blue-200 rounded-lg bg-blue-50 p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold text-blue-800">
-          {webhookType === 'teams' ? 'Teams' : webhookType === 'slack' ? 'Slack' : 'チャット'} に投稿
+          {webhookLabel} に投稿
         </h4>
         {!canPost && (
           <span className="text-xs text-gray-400">Webhook URLが未設定です</span>

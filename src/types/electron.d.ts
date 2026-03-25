@@ -9,10 +9,13 @@ export interface ElectronAPI {
   moveDir: (src: string, dest: string) => Promise<boolean>
   readJson: <T>(filePath: string) => Promise<T | null>
   writeJson: (filePath: string, data: unknown) => Promise<boolean>
+  deleteDir: (dirPath: string) => Promise<boolean>
   exists: (path: string) => Promise<boolean>
   getSettingsPath: () => Promise<string>
-  postWebhook: (url: string, type: 'teams' | 'slack', message: string) => Promise<true>
+  postWebhook: (url: string, type: 'teams' | 'slack', message: string) => Promise<boolean>
   getFilePath: (file: File) => string
+  watchStart: (dirPath: string) => Promise<boolean>
+  onFsChanged: (callback: () => void) => void
 }
 
 declare global {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { AppSettings, CandidateStatus, RecruitmentType, WebhookType } from '@/types'
 import {
@@ -12,6 +12,23 @@ export function SettingsPage() {
   const { settings, saveSettings } = useSettings()
   const [tab, setTab] = useState<Tab>('general')
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // 初期値を記録し isDirty 判定に使用する
+  const initialValues = useRef({
+    rootDir: settings?.rootDir ?? '',
+    assignees: settings?.assignees ?? [],
+    subStatuses: settings?.subStatuses ?? [...DEFAULT_SUB_STATUSES],
+    webhookUrl: settings?.webhookUrl ?? '',
+    webhookType: settings?.webhookType ?? null,
+    templates: (() => {
+      const savedTemplates = settings?.messageTemplates ?? {}
+      const merged: Record<string, string> = { ...DEFAULT_TEMPLATES }
+      for (const [k, v] of Object.entries(savedTemplates)) merged[k] = v
+      return merged
+    })(),
+  })
 
   // general
   const [rootDir, setRootDir] = useState(settings?.rootDir ?? '')
@@ -41,6 +58,52 @@ export function SettingsPage() {
   })
   const [editingKey, setEditingKey] = useState<string | null>(null)
 
+  // settings が null から値にロードされたとき、各 state を同期する
+  useEffect(() => {
+    if (!settings) return
+    setRootDir(settings.rootDir ?? '')
+    setAssignees(settings.assignees ?? [])
+    setSubStatuses(settings.subStatuses ?? [...DEFAULT_SUB_STATUSES])
+    setWebhookUrl(settings.webhookUrl ?? '')
+    setWebhookType(settings.webhookType ?? null)
+    const merged: Record<string, string> = { ...DEFAULT_TEMPLATES }
+    for (const [k, v] of Object.entries(settings.messageTemplates ?? {})) merged[k] = v
+    setTemplates(merged)
+    initialValues.current = {
+      rootDir: settings.rootDir ?? '',
+      assignees: settings.assignees ?? [],
+      subStatuses: settings.subStatuses ?? [...DEFAULT_SUB_STATUSES],
+      webhookUrl: settings.webhookUrl ?? '',
+      webhookType: settings.webhookType ?? null,
+      templates: merged,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!settings])
+
+  // 未保存変更の検出
+  const isDirty = useMemo(() => {
+    const iv = initialValues.current
+    if (rootDir !== iv.rootDir) return true
+    if (webhookUrl !== iv.webhookUrl) return true
+    if (webhookType !== iv.webhookType) return true
+    if (assignees.length !== iv.assignees.length || assignees.some((a, i) => a !== iv.assignees[i])) return true
+    if (subStatuses.length !== iv.subStatuses.length || subStatuses.some((s, i) => s !== iv.subStatuses[i])) return true
+    const templateKeys = Object.keys({ ...iv.templates, ...templates })
+    if (templateKeys.some(k => templates[k] !== iv.templates[k])) return true
+    return false
+  }, [rootDir, webhookUrl, webhookType, assignees, subStatuses, templates])
+
+  // ページ離脱時の警告（ブラウザ標準のダイアログ）
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
+
   function detectWebhookType(url: string): WebhookType | null {
     if (url.includes('webhook.office.com') || url.includes('teams.microsoft.com')) return 'teams'
     if (url.includes('hooks.slack.com')) return 'slack'
@@ -50,6 +113,11 @@ export function SettingsPage() {
   function handleWebhookUrlChange(url: string) {
     setWebhookUrl(url)
     setWebhookType(detectWebhookType(url))
+    setTestStatus('idle')
+  }
+
+  function handleWebhookTypeChange(type: WebhookType | null) {
+    setWebhookType(type)
     setTestStatus('idle')
   }
 
@@ -64,26 +132,52 @@ export function SettingsPage() {
     }
   }
 
+  function addListItem(
+    value: string,
+    list: string[],
+    setList: Dispatch<SetStateAction<string[]>>,
+    setValue: Dispatch<SetStateAction<string>>,
+  ) {
+    const trimmed = value.trim()
+    if (!trimmed || list.includes(trimmed)) return
+    setList(prev => [...prev, trimmed])
+    setValue('')
+  }
+
   function addAssignee() {
-    const name = newAssignee.trim()
-    if (!name || assignees.includes(name)) return
-    setAssignees(prev => [...prev, name])
-    setNewAssignee('')
+    addListItem(newAssignee, assignees, setAssignees, setNewAssignee)
   }
 
   function removeAssignee(name: string) {
     setAssignees(prev => prev.filter(a => a !== name))
   }
 
+  function moveAssignee(index: number, direction: 'up' | 'down') {
+    setAssignees(prev => {
+      const next = [...prev]
+      const target = direction === 'up' ? index - 1 : index + 1
+      if (target < 0 || target >= next.length) return prev
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
   function addSubStatus() {
-    const s = newSubStatus.trim()
-    if (!s || subStatuses.includes(s)) return
-    setSubStatuses(prev => [...prev, s])
-    setNewSubStatus('')
+    addListItem(newSubStatus, subStatuses, setSubStatuses, setNewSubStatus)
   }
 
   function removeSubStatus(s: string) {
     setSubStatuses(prev => prev.filter(x => x !== s))
+  }
+
+  function moveSubStatus(index: number, direction: 'up' | 'down') {
+    setSubStatuses(prev => {
+      const next = [...prev]
+      const target = direction === 'up' ? index - 1 : index + 1
+      if (target < 0 || target >= next.length) return prev
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
   }
 
   function updateTemplate(key: string, value: string) {
@@ -100,6 +194,7 @@ export function SettingsPage() {
   }
 
   async function handleSave() {
+    if (isSaving) return
     const newSettings: AppSettings = {
       rootDir,
       initialized: !!rootDir,
@@ -109,9 +204,19 @@ export function SettingsPage() {
       webhookType: webhookType ?? detectWebhookType(webhookUrl),
       messageTemplates: templates,
     }
-    await saveSettings(newSettings)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setIsSaving(true)
+    try {
+      setSaveError(null)
+      await saveSettings(newSettings)
+      // 保存成功時は初期値を更新して isDirty をリセットする
+      initialValues.current = { rootDir, assignees, subStatuses, webhookUrl, webhookType, templates }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '設定の保存に失敗しました')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const TABS: { key: Tab; label: string }[] = [
@@ -131,7 +236,7 @@ export function SettingsPage() {
         {TABS.map(t => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => { setTab(t.key); setEditingKey(null) }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               tab === t.key
                 ? 'border-blue-600 text-blue-600'
@@ -192,10 +297,24 @@ export function SettingsPage() {
               ? <p className="text-xs text-gray-400">担当者が登録されていません</p>
               : (
                 <ul className="space-y-1">
-                  {assignees.map(a => (
+                  {assignees.map((a, i) => (
                     <li key={a} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-md text-sm">
                       <span>{a}</span>
-                      <button onClick={() => removeAssignee(a)} className="text-gray-400 hover:text-red-500 text-xs">削除</button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => moveAssignee(i, 'up')}
+                          disabled={i === 0}
+                          className="text-gray-400 hover:text-gray-600 text-xs px-1 disabled:opacity-30"
+                          title="上へ"
+                        >↑</button>
+                        <button
+                          onClick={() => moveAssignee(i, 'down')}
+                          disabled={i === assignees.length - 1}
+                          className="text-gray-400 hover:text-gray-600 text-xs px-1 disabled:opacity-30"
+                          title="下へ"
+                        >↓</button>
+                        <button onClick={() => removeAssignee(a)} className="text-gray-400 hover:text-red-500 text-xs ml-1">削除</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -209,7 +328,7 @@ export function SettingsPage() {
           <div className="bg-white rounded-lg border border-gray-200 p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-1">サブステータスリスト</h3>
             <p className="text-xs text-gray-500 mb-3">
-              全ステータス共通で使えるサブステータスを管理します。順番はドラッグで変更できます。
+              全ステータス共通で使えるサブステータスを管理します。↑↓ボタンで順番を変更できます。
             </p>
             <div className="flex gap-2 mb-3">
               <input
@@ -229,10 +348,24 @@ export function SettingsPage() {
               ? <p className="text-xs text-gray-400">サブステータスが登録されていません</p>
               : (
                 <ul className="space-y-1">
-                  {subStatuses.map(s => (
+                  {subStatuses.map((s, i) => (
                     <li key={s} className="flex items-center justify-between px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-md text-sm">
                       <span className="text-amber-800">{s}</span>
-                      <button onClick={() => removeSubStatus(s)} className="text-gray-400 hover:text-red-500 text-xs">削除</button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => moveSubStatus(i, 'up')}
+                          disabled={i === 0}
+                          className="text-gray-400 hover:text-gray-600 text-xs px-1 disabled:opacity-30"
+                          title="上へ"
+                        >↑</button>
+                        <button
+                          onClick={() => moveSubStatus(i, 'down')}
+                          disabled={i === subStatuses.length - 1}
+                          className="text-gray-400 hover:text-gray-600 text-xs px-1 disabled:opacity-30"
+                          title="下へ"
+                        >↓</button>
+                        <button onClick={() => removeSubStatus(s)} className="text-gray-400 hover:text-red-500 text-xs ml-1">削除</button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -340,12 +473,19 @@ export function SettingsPage() {
           </div>
         )}
 
+        {saveError && (
+          <p className="text-xs text-red-500">{saveError}</p>
+        )}
         <button
           onClick={handleSave}
-          disabled={!rootDir}
-          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-40"
+          disabled={!rootDir || isSaving}
+          className={`w-full py-2 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-40 ${
+            isDirty
+              ? 'bg-amber-500 hover:bg-amber-600'
+              : 'bg-blue-600 hover:bg-blue-700'
+          }`}
         >
-          {saved ? '保存しました' : '保存'}
+          {isSaving ? '保存中...' : saved ? '保存しました' : isDirty ? '● 未保存の変更あり - 保存' : '保存'}
         </button>
       </div>
     </div>

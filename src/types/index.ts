@@ -4,7 +4,8 @@ export type GraduateSource = 'マイナビ' | 'ツノル'
 export type MidCareerSource = 'Green' | 'Wantedly'
 export type RecruitmentSource = GraduateSource | MidCareerSource
 
-export type GraduateStatus =
+/** 新卒・中途に共通するステータス */
+export type CommonStatus =
   | '応募'
   | '書類選考'
   | '一次面接'
@@ -13,15 +14,9 @@ export type GraduateStatus =
   | '不採用'
   | '辞退'
 
-export type MidCareerStatus =
-  | '応募'
-  | 'カジュアル面談'
-  | '書類選考'
-  | '一次面接'
-  | '最終面接'
-  | '内定'
-  | '不採用'
-  | '辞退'
+export type GraduateStatus = CommonStatus
+
+export type MidCareerStatus = CommonStatus | 'カジュアル面談'
 
 export type CandidateStatus = GraduateStatus | MidCareerStatus
 
@@ -56,8 +51,13 @@ export const CATEGORY_KEYWORDS: Record<FileCategory, string[]> = {
   'その他': [],
 }
 
+const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.png', '.jpg', '.jpeg']
+
 /** ファイル名からカテゴリを自動推定（判定できない場合は null）*/
 export function detectFileCategory(fileName: string): FileCategory | null {
+  const lower = fileName.toLowerCase()
+  const hasAllowedExt = ALLOWED_FILE_EXTENSIONS.some(ext => lower.endsWith(ext))
+  if (!hasAllowedExt) return null
   for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [FileCategory, string[]][]) {
     if (category === 'その他') continue
     if (keywords.some(kw => fileName.includes(kw))) return category
@@ -117,7 +117,7 @@ export type TemplateVars = {
 
 export function renderTemplate(template: string, vars: TemplateVars): string {
   return template.replace(/\{\{(.+?)\}\}/g, (_, key) => {
-    return (vars as Record<string, string>)[key.trim()] ?? `{{${key}}}`
+    return (vars as Record<string, string>)[key.trim()] ?? ''
   })
 }
 

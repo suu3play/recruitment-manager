@@ -22,6 +22,7 @@ export function CandidateDetailPage() {
 
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [notifyState, setNotifyState] = useState<{
     status: CandidateStatus; deadline: string | null
   } | null>(null)
@@ -38,16 +39,29 @@ export function CandidateDetailPage() {
     const files = Array.from(e.dataTransfer.files)
       .filter(f => /\.(pdf|xlsx|xls|docx|doc)$/i.test(f.name))
     for (const file of files) {
-      const path = window.electronAPI.getFilePath(file)
-      const category: FileCategory = detectFileCategory(file.name) ?? 'その他'
-      await addFile(candidate!.id, path, file.name, category)
+      try {
+        if (!window.electronAPI?.getFilePath) {
+          throw new Error('electronAPI が利用できません')
+        }
+        const path = window.electronAPI.getFilePath(file)
+        const category: FileCategory = detectFileCategory(file.name) ?? 'その他'
+        await addFile(candidate!.id, path, file.name, category)
+      } catch (err) {
+        console.error('ファイルの追加に失敗しました:', err)
+        alert(`ファイルの追加に失敗しました: ${file.name}`)
+      }
     }
   }
 
   async function handleDelete() {
     if (!confirm(`「${candidate!.name}」を削除しますか？`)) return
-    await deleteCandidate(candidate!.id)
-    navigate('/')
+    setDeleteError(null)
+    try {
+      await deleteCandidate(candidate!.id)
+      navigate('/')
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : '削除に失敗しました')
+    }
   }
 
   return (
@@ -95,6 +109,11 @@ export function CandidateDetailPage() {
           </button>
         </div>
       </div>
+      {deleteError && (
+        <div className="px-6 py-2 bg-red-50 border-b border-red-200">
+          <p className="text-sm text-red-600">{deleteError}</p>
+        </div>
+      )}
 
       <div className="p-6 grid grid-cols-3 gap-6">
         {/* 基本情報 */}
@@ -147,9 +166,13 @@ export function CandidateDetailPage() {
               <p className="text-sm text-gray-400">選考履歴はありません</p>
             ) : (
               <div className="space-y-3">
-                {[...candidate.stages].reverse().map((stage, i) => (
-                  <StageCard key={i} stage={stage} />
-                ))}
+                {[...candidate.stages].reverse().map((stage, i, reversed) => {
+                  // 逆順表示のため、次のインデックス（= 元配列での前のステージ）の日付を取得
+                  const prevStage = reversed[i + 1]
+                  return (
+                    <StageCard key={i} stage={stage} prevDate={prevStage?.date ?? null} />
+                  )
+                })}
               </div>
             )}
           </InfoCard>
@@ -172,7 +195,7 @@ export function CandidateDetailPage() {
             ) : (
               <ul className="space-y-1.5">
                 {candidate.files.map(f => (
-                  <li key={f.name} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
+                  <li key={f.path} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
                     <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded shrink-0">
                       {f.category ?? 'その他'}
                     </span>
@@ -207,7 +230,7 @@ export function CandidateDetailPage() {
           onSubmit={async (newStatus, record) => {
             await changeStatus(candidate.id, newStatus, record)
             setShowStatusModal(false)
-            setNotifyState({ status: newStatus, deadline: (record as any).deadline ?? null })
+            setNotifyState({ status: newStatus, deadline: record.deadline ?? null })
           }}
         />
       )}
@@ -234,11 +257,22 @@ export function CandidateDetailPage() {
   )
 }
 
-function StageCard({ stage }: { stage: StageRecord }) {
+function StageCard({ stage, prevDate }: { stage: StageRecord; prevDate: string | null }) {
+  const daysDiff = prevDate
+    ? Math.round((new Date(stage.date).getTime() - new Date(prevDate).getTime()) / 86400000)
+    : null
+
   return (
     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
       <div className="flex items-center justify-between mb-1">
-        <StatusBadge status={stage.stage} size="sm" />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={stage.stage} size="sm" />
+          {daysDiff !== null && (
+            <span className={`text-xs ${daysDiff >= 14 ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>
+              前ステップから{daysDiff}日
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           {stage.rating && (
             <span className={`font-bold ${RATING_COLORS[stage.rating]}`}>{stage.rating}</span>
@@ -280,12 +314,15 @@ function StatusChangeModal({ candidate, statuses, registeredAssignees, subStatus
 
   async function handleSubmit() {
     setIsLoading(true)
-    await onSubmit(newStatus, {
-      date, evaluator, rating: rating || null, memo,
-      subStatus: subStatus || null,
-      deadline: deadline || null,
-    } as Omit<StageRecord, 'stage'>)
-    setIsLoading(false)
+    try {
+      await onSubmit(newStatus, {
+        date, evaluator, rating: rating || null, memo,
+        subStatus: subStatus || null,
+        deadline: deadline || null,
+      } as Omit<StageRecord, 'stage'>)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -404,6 +441,7 @@ function InfoRow({ label, value, className }: { label: string; value: string; cl
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
 
