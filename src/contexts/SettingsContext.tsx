@@ -2,6 +2,16 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { AppSettings } from '@/types'
 import { DEFAULT_SUB_STATUSES } from '@/types'
 
+const DEFAULT_SETTINGS: AppSettings = {
+  rootDir: '',
+  initialized: false,
+  assignees: [],
+  subStatuses: [...DEFAULT_SUB_STATUSES],
+  webhookUrl: '',
+  webhookType: null,
+  messageTemplates: {},
+}
+
 interface SettingsContextValue {
   settings: AppSettings | null
   isLoading: boolean
@@ -26,11 +36,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     try {
       const settingsPath = await window.electronAPI.getSettingsPath()
       const data = await window.electronAPI.readJson<AppSettings>(settingsPath)
-      setSettings(data ?? { rootDir: '', initialized: false, assignees: [], subStatuses: [...DEFAULT_SUB_STATUSES], webhookUrl: '', webhookType: null, messageTemplates: {} })
+      setSettings(data ?? { ...DEFAULT_SETTINGS, subStatuses: [...DEFAULT_SUB_STATUSES] })
     } catch (e) {
       setIsError(true)
       setErrorMessage(e instanceof Error ? e.message : '設定の読み込みに失敗しました')
-      setSettings({ rootDir: '', initialized: false, assignees: [], subStatuses: [...DEFAULT_SUB_STATUSES], webhookUrl: '', webhookType: null, messageTemplates: {} })
+      setSettings({ ...DEFAULT_SETTINGS, subStatuses: [...DEFAULT_SUB_STATUSES] })
     } finally {
       setIsLoading(false)
     }

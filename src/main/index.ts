@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, session } from 'electron'
-import { join, isAbsolute } from 'path'
+import { join, isAbsolute, dirname } from 'path'
 import { watch } from 'fs'
 import type { FSWatcher } from 'fs'
-import { access, mkdir, readdir, rename, copyFile, unlink, readFile, writeFile, rm } from 'fs/promises'
+import { access, mkdir, readdir, stat, rename, copyFile, unlink, readFile, writeFile, rm } from 'fs/promises'
 
 let mainWindow: BrowserWindow | null = null
 let fsWatcher: FSWatcher | null = null
@@ -38,6 +38,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
     titleBarStyle: 'default',
     title: '採用管理',
@@ -98,6 +99,19 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+// ---- IPC レスポンス型 ----
+
+/**
+ * IPC ハンドラーの統一レスポンス型。
+ * 新規追加ハンドラーはこの形式を使用すること。
+ * 既存ハンドラーは後方互換性のため変更しない。
+ */
+export type IpcResponse<T = void> = {
+  success: boolean
+  data?: T
+  error?: string
+}
+
 // ---- IPC ハンドラー ----
 
 // ディレクトリ選択ダイアログ
@@ -109,7 +123,8 @@ ipcMain.handle('dialog:selectDirectory', async () => {
 // ファイルをOSのデフォルトアプリで開く
 ipcMain.handle('shell:openFile', async (_event, filePath: string) => {
   validatePath(filePath, 'filePath')
-  await shell.openPath(filePath)
+  const errorMsg = await shell.openPath(filePath)
+  if (errorMsg) throw new Error(errorMsg)
 })
 
 // フォルダをエクスプローラーで開く
@@ -131,6 +146,8 @@ ipcMain.handle('fs:ensureDir', async (_event, dirPath: string) => {
 ipcMain.handle('fs:listFiles', async (_event, dirPath: string): Promise<string[]> => {
   validatePath(dirPath, 'dirPath')
   if (!(await pathExists(dirPath))) return []
+  const s = await stat(dirPath)
+  if (!s.isDirectory()) return []
   return readdir(dirPath)
 })
 
@@ -158,7 +175,7 @@ ipcMain.handle('fs:moveDir', async (_event, srcPath: string, destPath: string) =
   validatePath(srcPath, 'srcPath')
   validatePath(destPath, 'destPath')
   if (!(await pathExists(srcPath))) return false
-  const parentDir = destPath.substring(0, destPath.lastIndexOf('/')) || destPath.substring(0, destPath.lastIndexOf('\\'))
+  const parentDir = dirname(destPath)
   if (parentDir && !(await pathExists(parentDir))) {
     await mkdir(parentDir, { recursive: true })
   }
@@ -243,14 +260,7 @@ function validateWebhookUrl(url: string): void {
 // Webhook 送信（Teams / Slack）
 ipcMain.handle('webhook:post', async (_event, url: string, webhookType: 'teams' | 'slack', message: string) => {
   validateWebhookUrl(url)
-  let body: string
-  if (webhookType === 'teams') {
-    // Teams Incoming Webhook は {"text": "..."} で送信可能
-    body = JSON.stringify({ text: message })
-  } else {
-    // Slack Incoming Webhook
-    body = JSON.stringify({ text: message })
-  }
+  const body = JSON.stringify({ text: message })
 
   const TIMEOUT_MS = 10_000
   const MAX_RETRIES = 3

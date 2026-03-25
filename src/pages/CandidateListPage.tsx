@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCandidates } from '@/contexts/CandidateContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import { StatusBadge, SubStatusBadge, TypeBadge } from '@/components/common/Badge'
@@ -16,19 +16,53 @@ export function CandidateListPage() {
   const { candidates, isLoading } = useCandidates()
   const { settings } = useSettings()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [typeFilter, setTypeFilter] = useState<RecruitmentType | 'all'>('all')
-  const [statusFilter, setStatusFilter] = useState<CandidateStatus | 'all'>('all')
-  const [sourceFilter, setSourceFilter] = useState<RecruitmentSource | 'all'>('all')
-  const [yearFilter, setYearFilter] = useState<string>('all')
-  const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('createdAt')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const typeFilter = (searchParams.get('type') ?? 'all') as RecruitmentType | 'all'
+  const statusFilter = (searchParams.get('status') ?? 'all') as CandidateStatus | 'all'
+  const sourceFilter = (searchParams.get('source') ?? 'all') as RecruitmentSource | 'all'
+  const yearFilter = searchParams.get('year') ?? 'all'
+  const search = searchParams.get('q') ?? ''
+  const sortKey = (searchParams.get('sortKey') ?? 'createdAt') as SortKey
+  const sortDir = (searchParams.get('sortDir') ?? 'desc') as SortDir
 
-  const allStatuses = [...new Set([...GRADUATE_STATUSES, ...MID_CAREER_STATUSES])]
-  const allSources = [...GRADUATE_SOURCES, ...MID_CAREER_SOURCES]
-  const years = [...new Set(candidates.filter(c => c.graduationYear).map(c => c.graduationYear!))]
-    .sort((a, b) => Number(a) - Number(b))
+  function updateParam(key: string, value: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value === 'all' || value === '') {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
+      return next
+    }, { replace: true })
+  }
+
+  function setTypeFilter(v: RecruitmentType | 'all') { updateParam('type', v) }
+  function setStatusFilter(v: CandidateStatus | 'all') { updateParam('status', v) }
+  function setSourceFilter(v: RecruitmentSource | 'all') { updateParam('source', v) }
+  function setYearFilter(v: string) { updateParam('year', v) }
+  function setSearch(v: string) { updateParam('q', v) }
+
+  const hasActiveFilter = typeFilter !== 'all' || statusFilter !== 'all' || sourceFilter !== 'all' || yearFilter !== 'all' || search !== ''
+
+  function resetFilters() {
+    setSearchParams({}, { replace: true })
+  }
+
+  const allStatuses = useMemo(
+    () => [...new Set([...GRADUATE_STATUSES, ...MID_CAREER_STATUSES])],
+    []
+  )
+  const allSources = useMemo(
+    () => [...new Set([...GRADUATE_SOURCES, ...MID_CAREER_SOURCES])],
+    []
+  )
+  const years = useMemo(
+    () => [...new Set(candidates.filter(c => c.graduationYear).map(c => c.graduationYear!))]
+      .sort((a, b) => Number(a) - Number(b)),
+    [candidates]
+  )
 
   const filtered = useMemo(() => {
     let list = [...candidates]
@@ -79,12 +113,16 @@ export function CandidateListPage() {
   }
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (sortKey === key) {
+        next.set('sortDir', sortDir === 'asc' ? 'desc' : 'asc')
+      } else {
+        next.set('sortKey', key)
+        next.set('sortDir', 'asc')
+      }
+      return next
+    }, { replace: true })
   }
 
   function deadlineClass(deadline: string | null) {
@@ -147,24 +185,32 @@ export function CandidateListPage() {
             placeholder="氏名・メール・担当者で検索"
             className="px-3 py-1.5 border border-gray-300 rounded-md text-sm w-52"
           />
-          <Select value={typeFilter} onChange={v => setTypeFilter(v as RecruitmentType | 'all')}>
+          <Select aria-label="採用区分フィルター" value={typeFilter} onChange={v => setTypeFilter(v as RecruitmentType | 'all')}>
             <option value="all">区分: 全て</option>
             <option value="graduate">新卒</option>
             <option value="mid-career">中途</option>
           </Select>
-          <Select value={statusFilter} onChange={v => setStatusFilter(v as CandidateStatus | 'all')}>
+          <Select aria-label="ステータスフィルター" value={statusFilter} onChange={v => setStatusFilter(v as CandidateStatus | 'all')}>
             <option value="all">ステータス: 全て</option>
             {allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
           </Select>
-          <Select value={sourceFilter} onChange={v => setSourceFilter(v as RecruitmentSource | 'all')}>
+          <Select aria-label="採用媒体フィルター" value={sourceFilter} onChange={v => setSourceFilter(v as RecruitmentSource | 'all')}>
             <option value="all">媒体: 全て</option>
             {allSources.map(s => <option key={s} value={s}>{s}</option>)}
           </Select>
           {years.length > 0 && (
-            <Select value={yearFilter} onChange={v => setYearFilter(v)}>
+            <Select aria-label="卒業年度フィルター" value={yearFilter} onChange={v => setYearFilter(v)}>
               <option value="all">卒業年度: 全て</option>
               {years.map(y => <option key={y} value={y}>{y}年卒</option>)}
             </Select>
+          )}
+          {hasActiveFilter && (
+            <button
+              onClick={resetFilters}
+              className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md transition-colors"
+            >
+              リセット
+            </button>
           )}
         </div>
       </div>
@@ -201,7 +247,11 @@ export function CandidateListPage() {
                 <tr
                   key={c.id}
                   onClick={() => navigate(`/candidates/${c.id}`)}
-                  className="hover:bg-blue-50 cursor-pointer transition-colors"
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') navigate(`/candidates/${c.id}`) }}
+                  tabIndex={0}
+                  role="row"
+                  aria-label={`${c.name} の詳細を開く`}
+                  className="hover:bg-blue-50 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">{c.name}</td>
                   <td className="px-4 py-3">
@@ -231,15 +281,17 @@ export function CandidateListPage() {
   )
 }
 
-function Select({ value, onChange, children }: {
+function Select({ value, onChange, children, 'aria-label': ariaLabel }: {
   value: string
   onChange: (v: string) => void
   children: React.ReactNode
+  'aria-label'?: string
 }) {
   return (
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
+      aria-label={ariaLabel}
       className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white"
     >
       {children}

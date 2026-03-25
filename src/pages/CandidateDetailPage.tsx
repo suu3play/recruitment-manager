@@ -166,9 +166,13 @@ export function CandidateDetailPage() {
               <p className="text-sm text-gray-400">選考履歴はありません</p>
             ) : (
               <div className="space-y-3">
-                {[...candidate.stages].reverse().map((stage, i) => (
-                  <StageCard key={i} stage={stage} />
-                ))}
+                {[...candidate.stages].reverse().map((stage, i, reversed) => {
+                  // 逆順表示のため、次のインデックス（= 元配列での前のステージ）の日付を取得
+                  const prevStage = reversed[i + 1]
+                  return (
+                    <StageCard key={i} stage={stage} prevDate={prevStage?.date ?? null} />
+                  )
+                })}
               </div>
             )}
           </InfoCard>
@@ -191,7 +195,7 @@ export function CandidateDetailPage() {
             ) : (
               <ul className="space-y-1.5">
                 {candidate.files.map(f => (
-                  <li key={f.name} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
+                  <li key={f.path} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
                     <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded shrink-0">
                       {f.category ?? 'その他'}
                     </span>
@@ -226,7 +230,7 @@ export function CandidateDetailPage() {
           onSubmit={async (newStatus, record) => {
             await changeStatus(candidate.id, newStatus, record)
             setShowStatusModal(false)
-            setNotifyState({ status: newStatus, deadline: (record as any).deadline ?? null })
+            setNotifyState({ status: newStatus, deadline: record.deadline ?? null })
           }}
         />
       )}
@@ -253,11 +257,22 @@ export function CandidateDetailPage() {
   )
 }
 
-function StageCard({ stage }: { stage: StageRecord }) {
+function StageCard({ stage, prevDate }: { stage: StageRecord; prevDate: string | null }) {
+  const daysDiff = prevDate
+    ? Math.round((new Date(stage.date).getTime() - new Date(prevDate).getTime()) / 86400000)
+    : null
+
   return (
     <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
       <div className="flex items-center justify-between mb-1">
-        <StatusBadge status={stage.stage} size="sm" />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={stage.stage} size="sm" />
+          {daysDiff !== null && (
+            <span className={`text-xs ${daysDiff >= 14 ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>
+              前ステップから{daysDiff}日
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           {stage.rating && (
             <span className={`font-bold ${RATING_COLORS[stage.rating]}`}>{stage.rating}</span>
@@ -426,6 +441,7 @@ function InfoRow({ label, value, className }: { label: string; value: string; cl
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
 

@@ -8,10 +8,19 @@ export function SetupPage() {
   const [rootDir, setRootDir] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [dirError, setDirError] = useState<string | null>(null)
 
   async function handleSelectDir() {
     const dir = await window.electronAPI.selectDirectory()
-    if (dir) setRootDir(dir)
+    if (!dir) return
+    setDirError(null)
+    // フォルダへの書き込み可否を確認する
+    try {
+      await window.electronAPI.ensureDir(dir)
+      setRootDir(dir)
+    } catch {
+      setDirError('選択したフォルダへの書き込みができません。別のフォルダを選択してください。')
+    }
   }
 
   async function handleStart() {
@@ -31,6 +40,7 @@ export function SetupPage() {
       await saveSettings(settings)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : '設定の保存に失敗しました')
+    } finally {
       setIsSaving(false)
     }
   }
@@ -43,6 +53,17 @@ export function SetupPage() {
           <p className="mt-2 text-sm text-gray-500">
             はじめに、候補者データと書類を保存するフォルダを指定してください。
           </p>
+        </div>
+
+        {/* 進捗インジケーター */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold shrink-0">
+            1
+          </div>
+          <span className="text-sm font-medium text-blue-700">ステップ 1/1: フォルダ設定</span>
+          <div className="flex-1 h-1 bg-blue-200 rounded-full">
+            <div className="h-1 bg-blue-600 rounded-full" style={{ width: rootDir ? '100%' : '30%' }} />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -66,6 +87,9 @@ export function SetupPage() {
           </div>
           {rootDir && (
             <p className="text-xs text-gray-400 break-all">{rootDir}</p>
+          )}
+          {dirError && (
+            <p className="text-xs text-red-500">{dirError}</p>
           )}
         </div>
 

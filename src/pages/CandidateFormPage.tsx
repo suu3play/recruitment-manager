@@ -32,6 +32,9 @@ function today(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+const GRADUATION_YEAR_MIN = new Date().getFullYear() - 1
+const GRADUATION_YEAR_MAX = new Date().getFullYear() + 10
+
 export function CandidateFormPage() {
   const navigate = useNavigate()
   const { addCandidate, addFile, candidates } = useCandidates()
@@ -198,7 +201,7 @@ export function CandidateFormPage() {
               </FieldGroup>
               {type === 'graduate' && (
                 <FieldGroup label="卒業予定年度" required>
-                  <Input type="number" value={graduationYear} onChange={e => setGraduationYear(e.target.value)} min={2024} max={2035} className="w-24" />
+                  <Input type="number" value={graduationYear} onChange={e => setGraduationYear(e.target.value)} min={GRADUATION_YEAR_MIN} max={GRADUATION_YEAR_MAX} className="w-24" />
                 </FieldGroup>
               )}
             </div>

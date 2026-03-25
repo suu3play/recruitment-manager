@@ -7,7 +7,7 @@ interface Props {
 }
 
 export function StatusBadge({ status, size = 'md' }: Props) {
-  const color = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-700'
+  const color = STATUS_COLORS[status]
   const sizeClass = size === 'sm' ? 'text-xs px-1.5 py-0.5' : 'text-xs px-2.5 py-1'
   return (
     <span className={`inline-flex items-center rounded-full font-medium ${color} ${sizeClass}`}>
